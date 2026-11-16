@@ -1,5 +1,9 @@
 import { query } from '../../config/database.js';
+import { PROFILE_PICTURES_DIRECTORY, PROFILE_PICTURES_URL_PATH } from '../../config/uploads.js';
 import { AppError, asyncHandler } from '../../middleware/errorHandler.js';
+import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 // @desc    Get all members
 // @route   GET /api/members
@@ -185,11 +189,12 @@ export const getMyProfile = asyncHandler(async (req, res, next) => {
 });
 
 // @desc    Update current member profile
-// @route   PUT /api/members/me
+// @route   PATCH /api/members/me
 // @access  Private
 export const updateMyProfile = asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
-  const { fullName, phone, address, dateOfBirth, gender, emergencyContact, bio,email } = req.body;
+  const { fullName, phone, address, dateOfBirth, gender, emergencyContact, bio, email } = req.body;
+  let uploadedProfilePicturePath;
 
   // Build update query dynamically
   const updates = [];
@@ -238,6 +243,22 @@ export const updateMyProfile = asyncHandler(async (req, res, next) => {
     paramCount++;
   }
 
+  if (req.file) {
+    const extensionByMimeType = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    };
+    const filename = `${randomUUID()}${extensionByMimeType[req.file.mimetype]}`;
+    uploadedProfilePicturePath = path.join(PROFILE_PICTURES_DIRECTORY, filename);
+    await mkdir(PROFILE_PICTURES_DIRECTORY, { recursive: true });
+    await writeFile(uploadedProfilePicturePath, req.file.buffer, { flag: 'wx' });
+
+    updates.push(`profile_picture_url = $${paramCount}`);
+    values.push(`${PROFILE_PICTURES_URL_PATH}/${filename}`);
+    paramCount++;
+  }
+
   if (updates.length === 0) {
     throw new AppError('No fields to update', 400);
   }
@@ -245,15 +266,34 @@ export const updateMyProfile = asyncHandler(async (req, res, next) => {
   updates.push(`updated_at = NOW()`);
   values.push(userId);
 
-  const result = await query(
-    `UPDATE users SET ${updates.join(', ')}
-     WHERE id = $${paramCount} AND deleted_at IS NULL
-     RETURNING id, email, full_name, phone, address, date_of_birth, gender, 
-               emergency_contact, bio, updated_at`,
-    values
-  );
+  let result;
+  try {
+    result = await query(
+      `UPDATE users SET ${updates.join(', ')}
+       WHERE id = $${paramCount} AND deleted_at IS NULL
+       RETURNING id, email, full_name, phone, address, date_of_birth, gender,
+                 emergency_contact, profile_picture_url, bio, updated_at`,
+      values
+    );
+  } catch (error) {
+    if (uploadedProfilePicturePath) {
+      try {
+        await unlink(uploadedProfilePicturePath);
+      } catch (cleanupError) {
+        console.error('Failed to remove profile picture after profile update failed:', cleanupError);
+      }
+    }
+    throw error;
+  }
 
   if (result.rows.length === 0) {
+    if (uploadedProfilePicturePath) {
+      try {
+        await unlink(uploadedProfilePicturePath);
+      } catch (cleanupError) {
+        console.error('Failed to remove profile picture for missing user:', cleanupError);
+      }
+    }
     throw new AppError('User not found', 404);
   }
 

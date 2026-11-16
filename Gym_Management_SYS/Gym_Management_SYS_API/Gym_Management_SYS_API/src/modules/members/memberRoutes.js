@@ -15,6 +15,7 @@ import {
   validatePagination,
 } from '../../middleware/validators.js';
 import { protect, authorize, authorizeOwnerOrAdmin } from '../../middleware/authMiddleware.js';
+import { uploadProfilePicture } from '../../middleware/profilePictureUpload.js';
 
 const router = express.Router();
 
@@ -23,7 +24,8 @@ router.use(protect);
 
 // Member's own profile
 router.get('/me', getMyProfile);
-router.patch('/me', validateMemberUpdate, updateMyProfile);
+router.patch('/me', uploadProfilePicture, validateMemberUpdate, updateMyProfile);
+router.put('/me', uploadProfilePicture, validateMemberUpdate, updateMyProfile);
 
 // Admin/Manager routes
 router.get('/', authorize('admin', 'manager'), validatePagination, getAllMembers);

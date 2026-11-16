@@ -180,16 +180,38 @@
         {
           "name": "Update My Profile",
           "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "method": "PATCH",
+            "header": [],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Updated Name\",\n  \"phone\": \"+1234567890\",\n  \"address\": \"123 Main St\",\n  \"bio\": \"Updated bio\"\n}"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "fullName",
+                  "value": "Updated Name",
+                  "type": "text"
+                },
+                {
+                  "key": "phone",
+                  "value": "+1234567890",
+                  "type": "text"
+                },
+                {
+                  "key": "address",
+                  "value": "123 Main St",
+                  "type": "text"
+                },
+                {
+                  "key": "bio",
+                  "value": "Updated bio",
+                  "type": "text"
+                },
+                {
+                  "key": "profilePicture",
+                  "type": "file",
+                  "src": [],
+                  "description": "Optional: JPEG, PNG, or WebP image up to 5 MB."
+                }
+              ]
             },
             "url": {
               "raw": "{{baseUrl}}/api/members/me",

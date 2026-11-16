@@ -314,16 +314,37 @@
                                                                                   }
                                                                               ]
                                                                },
-                                                      "method":  "PUT",
+                                                      "method":  "PATCH",
                                                       "header":  [
-                                                                     {
-                                                                         "key":  "Content-Type",
-                                                                         "value":  "application/json"
-                                                                     }
+
                                                                  ],
                                                       "body":  {
-                                                                   "mode":  "raw",
-                                                                   "raw":  "{\n  \"phone\": \"+1234567890\",\n  \"address\": \"123 Updated Street, City, State 12345\",\n  \"emergencyContact\": \"Jane Doe - +0987654321\"\n}"
+                                                                   "mode":  "formdata",
+                                                                   "formdata":  [
+                                                                                    {
+                                                                                        "key":  "phone",
+                                                                                        "value":  "+1234567890",
+                                                                                        "type":  "text"
+                                                                                    },
+                                                                                    {
+                                                                                        "key":  "address",
+                                                                                        "value":  "123 Updated Street, City, State 12345",
+                                                                                        "type":  "text"
+                                                                                    },
+                                                                                    {
+                                                                                        "key":  "emergencyContact",
+                                                                                        "value":  "Jane Doe - +0987654321",
+                                                                                        "type":  "text"
+                                                                                    },
+                                                                                    {
+                                                                                        "key":  "profilePicture",
+                                                                                        "type":  "file",
+                                                                                        "src":  [
+
+                                                                                                ],
+                                                                                        "description":  "Optional: JPEG, PNG, or WebP image up to 5 MB."
+                                                                                    }
+                                                                                ]
                                                                },
                                                       "url":  {
                                                                   "raw":  "{{baseUrl}}/api/members/me",

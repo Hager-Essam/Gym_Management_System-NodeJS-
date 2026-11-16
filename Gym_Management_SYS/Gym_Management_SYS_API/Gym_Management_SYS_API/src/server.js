@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import { PROFILE_PICTURES_DIRECTORY, PROFILE_PICTURES_URL_PATH } from './config/uploads.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
 import { checkDatabaseConnection } from './config/database.js';
@@ -29,6 +30,15 @@ app.use(cors({
 app.use(morgan('dev')); // Logging
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(PROFILE_PICTURES_URL_PATH, express.static(PROFILE_PICTURES_DIRECTORY, {
+  dotfiles: 'deny',
+  index: false,
+  maxAge: '1y',
+  immutable: true,
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  },
+}));
 
 // Apply rate limiting to all routes
 // app.use(rateLimiter);

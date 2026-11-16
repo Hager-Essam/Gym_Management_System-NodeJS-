@@ -418,6 +418,21 @@ export const getMyProfile = asyncHandler(async (req, res, next) => {
 
 ### **Update Member Profile**
 
+The member can include a `profilePicture` file in a `PATCH` or `PUT /api/members/me`
+request. Send the request as `multipart/form-data`; supported formats are JPEG, PNG,
+and WebP, up to 5 MB. The updated profile returns `profile_picture_url`, and the image
+is served from that URL on the API host.
+
+```javascript
+const formData = new FormData();
+formData.append('fullName', fullName);
+formData.append('profilePicture', selectedImageFile);
+
+await apiClient.patch('/api/members/me', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' },
+});
+```
+
 ```javascript
 export const updateMyProfile = asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
