@@ -31,7 +31,7 @@ app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // Apply rate limiting to all routes
-app.use(rateLimiter);
+// app.use(rateLimiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
