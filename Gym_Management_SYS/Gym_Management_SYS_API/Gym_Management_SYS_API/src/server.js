@@ -14,6 +14,11 @@ import planRoutes from './modules/Plans/planRoutes.js';
 import subscriptionRoutes from './modules/subscriptions/subscriptionRoutes.js';
 import attendanceRoutes from './modules/attendance/attendanceRoutes.js';
 import paymentRoutes from './modules/payment/paymentRoutes.js';
+import adminRoutes from './modules/admin/adminRoutes.js';
+import operationRoutes from './modules/admin/operationRoutes.js';
+import notificationRoutes from './modules/notifications/notificationRoutes.js';
+import classRoutes from './modules/classes/memberClassRoutes.js';
+import trainerRoutes from './modules/trainers/trainerRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -59,6 +64,12 @@ app.use('/api/plans', planRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/admin', operationRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', notificationRoutes);
+app.use('/api/classes', classRoutes);
+app.use('/api/trainers', trainerRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -8,11 +8,14 @@ import {
   deleteMember,
   getMemberSubscription,
   getMemberAttendance,
+  createMember,
+  updateMemberStatus,
 } from './memberController.js';
 import {
   validateUUID,
   validateMemberUpdate,
   validatePagination,
+  validateAdminMemberCreate,
 } from '../../middleware/validators.js';
 import { protect, authorize, authorizeOwnerOrAdmin } from '../../middleware/authMiddleware.js';
 import { uploadProfilePicture } from '../../middleware/profilePictureUpload.js';
@@ -29,10 +32,12 @@ router.put('/me', uploadProfilePicture, validateMemberUpdate, updateMyProfile);
 
 // Admin/Manager routes
 router.get('/', authorize('admin', 'manager'), validatePagination, getAllMembers);
+router.post('/', authorize('admin'), validateAdminMemberCreate, createMember);
 
 // Member-specific routes
 router.get('/:id', validateUUID, authorizeOwnerOrAdmin, getMemberById);
 router.put('/:id', validateUUID, authorize('admin'), validateMemberUpdate, updateMember);
+router.patch('/:id/status', validateUUID, authorize('admin'), updateMemberStatus);
 router.delete('/:id', validateUUID, authorize('admin'), deleteMember);
 router.get('/:id/subscription', validateUUID, authorizeOwnerOrAdmin, getMemberSubscription);
 router.get('/:id/attendance', validateUUID, authorizeOwnerOrAdmin, getMemberAttendance);

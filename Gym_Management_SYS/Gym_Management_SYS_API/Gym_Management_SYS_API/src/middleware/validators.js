@@ -72,11 +72,13 @@ export const validateMemberUpdate = [
 ];
 
 // UUID parameter validation
-export const validateUUID = [
-  param('id')
-    .isUUID().withMessage('Invalid ID format'),
+export const validateUUIDParam = (parameterName) => [
+  param(parameterName)
+    .isUUID().withMessage(`Invalid ${parameterName} format`),
   validate,
 ];
+
+export const validateUUID = validateUUIDParam('id');
 
 // Pagination validation
 export const validatePagination = [
@@ -191,6 +193,16 @@ export const validateSubscriptionUpdate = [
   validate,
 ];
 
+export const validateAdminMemberCreate = [
+  body('email').trim().isEmail().withMessage('Please provide a valid email'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('fullName').trim().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
+  body('phone').optional({ nullable: true, checkFalsy: true }).isMobilePhone().withMessage('Invalid phone number'),
+  body('gender').optional().isIn(['male','female','other']).withMessage('Invalid gender value'),
+  body('dateOfBirth').optional().isISO8601().withMessage('Invalid date of birth'),
+  validate,
+];
+
 // Payment creation validation
 export const validatePaymentCreate = [
   body('userId')
@@ -208,5 +220,17 @@ export const validatePaymentCreate = [
   body('paymentType')
     .optional()
     .isIn(['subscription', 'session', 'product', 'other']).withMessage('Invalid payment type'),
+  validate,
+];
+
+export const validateManualPayment = [
+  body('subscriptionId')
+    .isUUID().withMessage('Invalid subscription ID'),
+  body('paymentMethod')
+    .isIn(['cash', 'bank_transfer']).withMessage('Manual payment method must be cash or bank_transfer'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Description must be at most 500 characters'),
   validate,
 ];

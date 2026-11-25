@@ -1,9 +1,54 @@
-import { query } from '../../config/database.js';
+import { query, transaction } from '../../config/database.js';
 import { PROFILE_PICTURES_DIRECTORY, PROFILE_PICTURES_URL_PATH } from '../../config/uploads.js';
 import { AppError, asyncHandler } from '../../middleware/errorHandler.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import bcrypt from 'bcrypt';
+import { writeAuditLog } from '../../utils/auditLog.js';
+
+export const createMember = asyncHandler(async (req, res, next) => {
+  const { email, password, fullName, phone, address, dateOfBirth, gender, emergencyContact } = req.body;
+  if (!email || !password || !fullName) {
+    throw new AppError('Email, password, and full name are required', 400);
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  const member = await transaction(async (client) => {
+    const existing = await client.query(
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL',
+      [normalizedEmail]
+    );
+    if (existing.rows.length > 0) {
+      throw new AppError('A user with this email already exists', 409);
+    }
+
+    const result = await client.query(
+      `INSERT INTO users (
+        email, password_hash, full_name, phone, address, date_of_birth,
+        gender, role, status, email_verified
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'member','active',false)
+      RETURNING id, email, full_name, phone, address, date_of_birth, gender,
+                role, status, created_at`,
+      [normalizedEmail, passwordHash, fullName, phone || null, address || null,
+       dateOfBirth || null, gender || null]
+    );
+    await client.query(
+      'INSERT INTO member_profiles (user_id, emergency_contact_name) VALUES ($1,$2)',
+      [result.rows[0].id, emergencyContact || null]
+    );
+    return result.rows[0];
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Member created successfully',
+    data: { member },
+  });
+  await writeAuditLog({actorId:req.user.id,action:'member.created',entityType:'member',entityId:member.id,metadata:{email:member.email}});
+});
 
 // @desc    Get all members
 // @route   GET /api/members
@@ -408,6 +453,32 @@ export const deleteMember = asyncHandler(async (req, res, next) => {
     success: true,
     message: 'Member deleted successfully',
   });
+  await writeAuditLog({actorId:req.user.id,action:'member.deleted',entityType:'member',entityId:id});
+});
+
+export const updateMemberStatus = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (!['active', 'inactive', 'suspended'].includes(status)) {
+    throw new AppError('Invalid member status', 400);
+  }
+
+  const result = await query(
+    `UPDATE users SET status = $1, updated_at = NOW()
+     WHERE id = $2 AND role = 'member' AND deleted_at IS NULL
+     RETURNING id, email, full_name, status, updated_at`,
+    [status, id]
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('Member not found', 404);
+  }
+
+  res.json({
+    success: true,
+    message: 'Member status updated successfully',
+    data: { member: result.rows[0] },
+  });
+  await writeAuditLog({actorId:req.user.id,action:'member.status_changed',entityType:'member',entityId:id,metadata:{status}});
 });
 
 // @desc    Get member subscription

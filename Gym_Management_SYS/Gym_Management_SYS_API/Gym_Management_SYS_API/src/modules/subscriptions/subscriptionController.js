@@ -1,5 +1,6 @@
 import { query, transaction } from '../../config/database.js';
 import { AppError, asyncHandler } from '../../middleware/errorHandler.js';
+import { writeAuditLog } from '../../utils/auditLog.js';
 
 // @desc    Get all subscriptions
 // @route   GET /api/subscriptions
@@ -108,37 +109,38 @@ export const createSubscription = asyncHandler(async (req, res, next) => {
 
     const plan = planResult.rows[0];
 
-    // Calculate end date
-    let durationQuery;
-    switch (plan.duration) {
-      case 'monthly':
-        durationQuery = "NOW() + INTERVAL '1 month'";
-        break;
-      case 'quarterly':
-        durationQuery = "NOW() + INTERVAL '3 months'";
-        break;
-      case 'annually':
-        durationQuery = "NOW() + INTERVAL '1 year'";
-        break;
-      default:
-        durationQuery = "NOW() + INTERVAL '1 month'";
+    const durationUnit = {
+      day: '1 day',
+      week: '1 week',
+      month: '1 month',
+      year: '1 year',
+    }[plan.duration_unit];
+    if (!durationUnit || plan.duration_value <= 0) {
+      throw new AppError('Invalid membership plan duration', 400);
     }
 
-    // Deactivate any existing active subscriptions
-    await client.query(
-      `UPDATE subscriptions SET status = 'cancelled', cancelled_at = NOW()
-       WHERE user_id = $1 AND status = 'active'`,
-      [userId]
-    );
+    const paymentFrequency = {
+      '1 month': 'monthly',
+      '3 month': 'quarterly',
+      '1 year': 'annually',
+    }[`${plan.duration_value} ${plan.duration_unit}`];
+    if (!paymentFrequency) {
+      throw new AppError('This plan duration is not supported for subscriptions', 400);
+    }
 
-    // Create new subscription
+    // Create pending; activation occurs only after backend payment confirmation.
     const subResult = await client.query(
       `INSERT INTO subscriptions (
         user_id, plan_id, start_date, end_date, status, payment_method,
         payment_frequency, amount, auto_renew, next_billing_date, created_at
-      ) VALUES ($1, $2, NOW(), ${durationQuery}, $3, $4, $5, $6, $7, ${durationQuery}, NOW())
+      ) VALUES (
+        $1, $2, CURRENT_DATE,
+        CURRENT_DATE + ($8 * INTERVAL '${durationUnit}'),
+        $3, $4, $5, $6, $7,
+        CURRENT_DATE + ($8 * INTERVAL '${durationUnit}'), NOW()
+      )
       RETURNING *`,
-      [userId, planId, 'active', paymentMethod, plan.duration, plan.price, autoRenew]
+      [userId, planId, 'pending', paymentMethod, paymentFrequency, plan.price, autoRenew, plan.duration_value]
     );
 
     return subResult.rows[0];
@@ -159,6 +161,18 @@ export const createSubscription = asyncHandler(async (req, res, next) => {
 export const updateSubscription = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { status, autoRenew, endDate } = req.body;
+
+  if (status === 'active') {
+    const payment = await query(
+      `SELECT id FROM payments
+       WHERE subscription_id=$1 AND status='completed'
+       LIMIT 1`,
+      [id]
+    );
+    if (payment.rows.length === 0) {
+      throw new AppError('Cannot activate a subscription without a completed payment', 400);
+    }
+  }
 
   const updates = [];
   const values = [];
@@ -220,6 +234,16 @@ export const cancelSubscription = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { reason } = req.body;
 
+  if (!['admin', 'manager'].includes(req.user.role)) {
+    const owner = await query(
+      'SELECT id FROM subscriptions WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL',
+      [id, req.user.id]
+    );
+    if (owner.rows.length === 0) {
+      throw new AppError('Not authorized to cancel this subscription', 403);
+    }
+  }
+
   const result = await query(
     `UPDATE subscriptions 
      SET status = 'cancelled', cancelled_at = NOW(), cancellation_reason = $1,
@@ -240,6 +264,97 @@ export const cancelSubscription = asyncHandler(async (req, res, next) => {
       subscription: result.rows[0],
     },
   });
+});
+
+export const approveSubscription = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  await transaction(async (client) => {
+    const subscriptionResult = await client.query(
+      `SELECT s.*, mp.duration_value, mp.duration_unit
+       FROM subscriptions s JOIN membership_plans mp ON mp.id=s.plan_id
+       WHERE s.id=$1 AND s.deleted_at IS NULL
+       FOR UPDATE`,
+      [id]
+    );
+    if (!subscriptionResult.rows.length) throw new AppError('Subscription not found',404);
+    const subscription=subscriptionResult.rows[0];
+    if(subscription.status==='active') throw new AppError('Subscription is already active',400);
+    if(subscription.status==='cancelled' || subscription.status==='expired') {
+      throw new AppError(`Cannot approve a ${subscription.status} subscription`,400);
+    }
+    const paymentResult=await client.query(
+      `SELECT id,amount FROM payments
+       WHERE subscription_id=$1 AND status='completed'
+       LIMIT 1`,
+      [id]
+    );
+    if(!paymentResult.rows.length) throw new AppError('A completed payment is required to approve the subscription',400);
+    if(Number(paymentResult.rows[0].amount)!==Number(subscription.amount)) {
+      throw new AppError('Completed payment amount does not match the subscription amount',400);
+    }
+    const intervalMap={day:'1 day',week:'1 week',month:'1 month',year:'1 year'};
+    const interval=intervalMap[subscription.duration_unit];
+    if(!interval) throw new AppError('Invalid subscription duration',400);
+    await client.query(
+      `UPDATE subscriptions SET status='active',start_date=CURRENT_DATE,
+       end_date=CURRENT_DATE + ($2 * INTERVAL '${interval}'),
+       updated_at=NOW()
+       WHERE id=$1`,
+      [id,subscription.duration_value]
+    );
+  });
+  const result=await query(`SELECT s.*,u.full_name,u.email,mp.name AS plan_name
+    FROM subscriptions s JOIN users u ON u.id=s.user_id
+    JOIN membership_plans mp ON mp.id=s.plan_id WHERE s.id=$1`,[id]);
+  await writeAuditLog({actorId:req.user.id,action:'subscription.approved',entityType:'subscription',entityId:id});
+  res.json({success:true,message:'Subscription approved successfully',data:{subscription:result.rows[0]}});
+});
+
+export const rejectSubscription = asyncHandler(async (req, res, next) => {
+  const { id }=req.params;
+  const {reason}=req.body||{};
+  const result=await query(
+    `UPDATE subscriptions SET status='cancelled',cancelled_at=NOW(),
+     cancellation_reason=$1,cancelled_by=$2,updated_at=NOW()
+     WHERE id=$3 AND status='pending' AND deleted_at IS NULL
+     RETURNING *`,
+    [reason||'Rejected by administrator',req.user.id,id]
+  );
+  if(!result.rows.length) throw new AppError('Pending subscription not found',404);
+  await writeAuditLog({actorId:req.user.id,action:'subscription.rejected',entityType:'subscription',entityId:id,metadata:{reason}});
+  res.json({success:true,message:'Subscription rejected successfully',data:{subscription:result.rows[0]}});
+});
+
+export const renewSubscription = asyncHandler(async (req, res, next) => {
+  const { id }=req.params;
+  const { autoRenew=true }=req.body||{};
+  const result=await transaction(async client=>{
+    const current=await client.query(
+      `SELECT s.*,mp.duration_value,mp.duration_unit
+       FROM subscriptions s JOIN membership_plans mp ON mp.id=s.plan_id
+       WHERE s.id=$1 AND s.deleted_at IS NULL
+       FOR UPDATE`,
+      [id]
+    );
+    if(!current.rows.length) throw new AppError('Subscription not found',404);
+    const subscription=current.rows[0];
+    const intervalMap={day:'1 day',week:'1 week',month:'1 month',year:'1 year'};
+    const interval=intervalMap[subscription.duration_unit];
+    if(!interval) throw new AppError('Invalid subscription duration',400);
+    const renewed=await client.query(
+      `UPDATE subscriptions
+       SET status='pending',start_date=CURRENT_DATE,
+           end_date=CURRENT_DATE + ($2 * INTERVAL '${interval}') ,
+           next_billing_date=CURRENT_DATE + ($2 * INTERVAL '${interval}'),
+           auto_renew=$3,updated_at=NOW()
+       WHERE id=$1
+       RETURNING *`,
+      [id,subscription.duration_value,autoRenew]
+    );
+    return renewed.rows[0];
+  });
+  await writeAuditLog({actorId:req.user.id,action:'subscription.renewal_requested',entityType:'subscription',entityId:id});
+  res.status(201).json({success:true,message:'Renewal created and pending payment confirmation',data:{subscription:result}});
 });
 
 // @desc    Get expiring subscriptions

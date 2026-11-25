@@ -148,6 +148,31 @@ CREATE TABLE IF NOT EXISTS membership_plans (
         CHECK (jsonb_typeof(features) = 'array')
 );
 
+ALTER TABLE membership_plans ADD COLUMN IF NOT EXISTS duration_value INTEGER;
+ALTER TABLE membership_plans ADD COLUMN IF NOT EXISTS duration_unit VARCHAR(20);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='membership_plans' AND column_name='duration'
+    ) THEN
+        UPDATE membership_plans
+        SET duration_value = CASE
+                WHEN duration = 'monthly' THEN 1
+                WHEN duration = 'quarterly' THEN 3
+                WHEN duration = 'annually' THEN 1
+                ELSE COALESCE(duration_value, 1)
+            END,
+            duration_unit = CASE
+                WHEN duration = 'monthly' THEN 'month'
+                WHEN duration = 'quarterly' THEN 'month'
+                WHEN duration = 'annually' THEN 'year'
+                ELSE COALESCE(duration_unit, 'month')
+            END
+        WHERE duration_value IS NULL OR duration_unit IS NULL;
+    END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_membership_plans_name_unique
     ON membership_plans (LOWER(name))
     WHERE deleted_at IS NULL;
@@ -182,6 +207,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     currency VARCHAR(3) NOT NULL DEFAULT 'EGP',
 
     auto_renew BOOLEAN NOT NULL DEFAULT FALSE,
+    payment_frequency VARCHAR(20) NOT NULL DEFAULT 'monthly',
 
     cancelled_at TIMESTAMPTZ,
     cancellation_reason TEXT,
@@ -203,8 +229,27 @@ CREATE TABLE IF NOT EXISTS subscriptions (
         CHECK (amount >= 0),
 
     CONSTRAINT subscriptions_valid_currency
-        CHECK (currency ~ '^[A-Z]{3}$')
+        CHECK (currency ~ '^[A-Z]{3}$'),
+
+    CONSTRAINT subscriptions_valid_frequency
+        CHECK (payment_frequency IN ('monthly', 'quarterly', 'annually'))
 );
+
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS payment_frequency VARCHAR(20) NOT NULL DEFAULT 'monthly';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'subscriptions_valid_frequency'
+          AND conrelid = 'subscriptions'::regclass
+    ) THEN
+        ALTER TABLE subscriptions
+            ADD CONSTRAINT subscriptions_valid_frequency
+            CHECK (payment_frequency IN ('monthly', 'quarterly', 'annually'));
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id
     ON subscriptions(user_id);
@@ -550,9 +595,73 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread
     ON notifications(user_id, created_at DESC)
     WHERE is_read = FALSE;
 
+-- ============================================================
+-- 11. AUDIT LOGS
+-- Administrative actions are append-only and not editable via API.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(100) NOT NULL,
+    entity_id UUID,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS actor_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action VARCHAR(100);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_type VARCHAR(100);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_id UUID;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_id ON audit_logs(actor_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 
 -- ============================================================
--- 11. UPDATED_AT TRIGGER
+-- 13. TRAINER ASSIGNMENTS
+-- A member may have one active assignment per trainer.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS trainer_assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    member_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    trainer_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    assigned_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMPTZ,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT trainer_assignments_valid_status
+        CHECK (status IN ('active', 'inactive', 'ended'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trainer_assignments_active_unique
+    ON trainer_assignments(member_id, trainer_id)
+    WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_trainer_assignments_member ON trainer_assignments(member_id);
+CREATE INDEX IF NOT EXISTS idx_trainer_assignments_trainer ON trainer_assignments(trainer_id);
+
+-- ============================================================
+-- 14. SYSTEM SETTINGS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- 12. UPDATED_AT TRIGGER
 -- Automatically refreshes updated_at on updates.
 -- ============================================================
 

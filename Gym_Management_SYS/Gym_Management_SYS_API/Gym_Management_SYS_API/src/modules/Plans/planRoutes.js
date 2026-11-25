@@ -21,6 +21,7 @@ router.get('/:id', validateUUID, getPlanById);
 // Admin only routes
 router.post('/', protect, authorize('admin'), validatePlanCreate, createPlan);
 router.put('/:id', protect, authorize('admin'), validateUUID, updatePlan);
+router.patch('/:id/status', protect, authorize('admin'), validateUUID, updatePlan);
 router.delete('/:id', protect, authorize('admin'), validateUUID, deletePlan);
 
 export default router;

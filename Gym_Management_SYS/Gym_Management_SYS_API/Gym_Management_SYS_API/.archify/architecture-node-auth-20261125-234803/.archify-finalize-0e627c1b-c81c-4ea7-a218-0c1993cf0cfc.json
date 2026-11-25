@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "running",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-11-25T21:48:57.263Z",
+  "specification": {
+    "path": "E:\\OneDrive\\OneDrive - EL-Minia University - Students\\Desktop\\NodeJs\\Gym_Management_SYS\\Gym_Management_SYS_API\\Gym_Management_SYS_API\\.archify\\architecture-node-auth-20261125-234803\\candidate.json",
+    "sha256": "989409623cc11111efb3c1b9c09086bd2a37f4d99dba03ade321e51e76357586",
+    "bytes": 2993
+  },
+  "artifact": {
+    "path": "E:\\OneDrive\\OneDrive - EL-Minia University - Students\\Desktop\\NodeJs\\Gym_Management_SYS\\Gym_Management_SYS_API\\Gym_Management_SYS_API\\.archify\\architecture-node-auth-20261125-234803\\node-api-authentication.html"
+  },
+  "stages": {},
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  },
+  "diagnostics": [],
+  "evidence": {
+    "receipt": "E:\\OneDrive\\OneDrive - EL-Minia University - Students\\Desktop\\NodeJs\\Gym_Management_SYS\\Gym_Management_SYS_API\\Gym_Management_SYS_API\\.archify\\architecture-node-auth-20261125-234803\\node-api-authentication.finalize.json",
+    "summaryReceipt": "E:\\OneDrive\\OneDrive - EL-Minia University - Students\\Desktop\\NodeJs\\Gym_Management_SYS\\Gym_Management_SYS_API\\Gym_Management_SYS_API\\.archify\\architecture-node-auth-20261125-234803\\node-api-authentication.finalize-summary.json"
+  },
+  "visualReview": "not-requested"
+}

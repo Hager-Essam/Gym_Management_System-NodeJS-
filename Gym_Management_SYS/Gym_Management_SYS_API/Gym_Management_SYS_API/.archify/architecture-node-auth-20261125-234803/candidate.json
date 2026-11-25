@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Gym API: Authentication and Persistence",
+    "output": ".archify/architecture-node-auth-20261125-234803/node-api-authentication.html",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Hager-Essam/Gym_Management_System-NodeJS-.git",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "aac4056226ef3c5fda7bde7f6cacd08a28105600"
+    }
+  },
+  "layout": {
+    "mode": "auto"
+  },
+  "components": [
+    {
+      "id": "react-client",
+      "type": "external",
+      "label": "React client",
+      "sublabel": "HTTP caller"
+    },
+    {
+      "id": "express-api",
+      "type": "backend",
+      "label": "Express API",
+      "sublabel": "HTTP server · route registration",
+      "sources": [
+        {
+          "path": "Gym_Management_SYS/Gym_Management_SYS_API/Gym_Management_SYS_API/src/server.js",
+          "line": 21,
+          "end_line": 22
+        },
+        {
+          "path": "Gym_Management_SYS/Gym_Management_SYS_API/Gym_Management_SYS_API/src/server.js",
+          "line": 55,
+          "end_line": 58
+        }
+      ]
+    },
+    {
+      "id": "auth-routes",
+      "type": "backend",
+      "label": "Auth routes",
+      "sublabel": "Public + protected endpoints",
+      "sources": [
+        {
+          "path": "Gym_Management_SYS/Gym_Management_SYS_API/Gym_Management_SYS_API/src/modules/auth/authRoutes.js",
+          "line": 18,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "jwt-guard",
+      "type": "security",
+      "label": "JWT guard",
+      "sublabel": "Verify token · load active user",
+      "sources": [
+        {
+          "path": "Gym_Management_SYS/Gym_Management_SYS_API/Gym_Management_SYS_API/src/middleware/authMiddleware.js",
+          "line": 21,
+          "end_line": 37
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "Connection pool · query helper",
+      "sources": [
+        {
+          "path": "Gym_Management_SYS/Gym_Management_SYS_API/Gym_Management_SYS_API/src/config/database.js",
+          "line": 1,
+          "end_line": 21
+        },
+        {
+          "path": "Gym_Management_SYS/Gym_Management_SYS_API/Gym_Management_SYS_API/src/config/database.js",
+          "line": 33,
+          "end_line": 38
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "react-client",
+      "to": "express-api",
+      "label": "HTTP"
+    },
+    {
+      "from": "express-api",
+      "to": "auth-routes",
+      "label": "mount /api/auth"
+    },
+    {
+      "from": "auth-routes",
+      "to": "jwt-guard",
+      "label": "protect /logout and /me"
+    },
+    {
+      "from": "jwt-guard",
+      "to": "postgres",
+      "label": "JWT check + user lookup"
+    }
+  ]
+}

@@ -6,6 +6,9 @@ import {
   updateSubscription,
   cancelSubscription,
   getExpiringSubscriptions,
+  approveSubscription,
+  rejectSubscription,
+  renewSubscription,
 } from './subscriptionController.js';
 import {
   validateUUID,
@@ -22,6 +25,9 @@ router.use(protect);
 // Admin/Manager routes
 router.get('/', authorize('admin', 'manager'), validatePagination, getAllSubscriptions);
 router.get('/expiring', authorize('admin', 'manager'), getExpiringSubscriptions);
+router.patch('/:id/approve', validateUUID, authorize('admin'), approveSubscription);
+router.patch('/:id/reject', validateUUID, authorize('admin'), rejectSubscription);
+router.post('/:id/renew', validateUUID, authorize('admin','manager'), renewSubscription);
 
 // Subscription operations
 router.post('/', authorize('admin', 'manager', 'member'), validateSubscriptionCreate, createSubscription);

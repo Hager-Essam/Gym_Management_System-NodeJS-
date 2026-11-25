@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import { AppError, asyncHandler } from '../../middleware/errorHandler.js';
+import { writeAuditLog } from '../../utils/auditLog.js';
 
 // @desc    Get all membership plans
 // @route   GET /api/plans
@@ -8,7 +9,14 @@ export const getAllPlans = asyncHandler(async (req, res, next) => {
   const { activeOnly = 'true' } = req.query;
 
   let queryText = `
-    SELECT id, name, description, price, duration, features, access_level,
+    SELECT id, name, description, price,
+             CASE
+               WHEN duration_value = 1 AND duration_unit = 'month' THEN 'monthly'
+               WHEN duration_value = 3 AND duration_unit = 'month' THEN 'quarterly'
+               WHEN duration_value = 1 AND duration_unit = 'year' THEN 'annually'
+               ELSE duration_value::text || ' ' || duration_unit
+             END AS duration,
+             duration_value, duration_unit, features, access_level,
            max_classes, includes_personal_training,
            is_active, is_visible,
            created_at
@@ -39,7 +47,14 @@ export const getPlanById = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
   const result = await query(
-    `SELECT * FROM membership_plans WHERE id = $1 AND deleted_at IS NULL`,
+    `SELECT *,
+       CASE
+         WHEN duration_value = 1 AND duration_unit = 'month' THEN 'monthly'
+         WHEN duration_value = 3 AND duration_unit = 'month' THEN 'quarterly'
+         WHEN duration_value = 1 AND duration_unit = 'year' THEN 'annually'
+         ELSE duration_value::text || ' ' || duration_unit
+       END AS duration
+     FROM membership_plans WHERE id = $1 AND deleted_at IS NULL`,
     [id]
   );
 
@@ -72,15 +87,26 @@ export const createPlan = asyncHandler(async (req, res, next) => {
     isVisible = true,
   } = req.body;
 
+  const durationMap = {
+    monthly: { value: 1, unit: 'month' },
+    quarterly: { value: 3, unit: 'month' },
+    annually: { value: 1, unit: 'year' },
+  };
+  const durationConfig = durationMap[duration];
+  if (!durationConfig) {
+    throw new AppError('Invalid duration', 400);
+  }
+
   const result = await query(
     `INSERT INTO membership_plans (
-      name, description, price, duration, features, access_level,
+      name, description, price, duration_value, duration_unit, features, access_level,
       max_classes, includes_personal_training, is_active, is_visible,
       created_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
     RETURNING *`,
     [
-      name, description, price, duration, JSON.stringify(features), accessLevel,
+      name, description, price, durationConfig.value, durationConfig.unit,
+      JSON.stringify(features), accessLevel,
       maxClasses, includesPersonalTraining, isActive, isVisible,
     ]
   );
@@ -92,6 +118,7 @@ export const createPlan = asyncHandler(async (req, res, next) => {
       plan: result.rows[0],
     },
   });
+  await writeAuditLog({actorId:req.user.id,action:'plan.created',entityType:'membership_plan',entityId:result.rows[0].id});
 });
 
 // @desc    Update membership plan
@@ -132,8 +159,20 @@ export const updatePlan = asyncHandler(async (req, res, next) => {
     paramCount++;
   }
   if (duration !== undefined) {
-    updates.push(`duration = $${paramCount}`);
-    values.push(duration);
+    const durationMap = {
+      monthly: { value: 1, unit: 'month' },
+      quarterly: { value: 3, unit: 'month' },
+      annually: { value: 1, unit: 'year' },
+    };
+    const durationConfig = durationMap[duration];
+    if (!durationConfig) {
+      throw new AppError('Invalid duration', 400);
+    }
+    updates.push(`duration_value = $${paramCount}`);
+    values.push(durationConfig.value);
+    paramCount++;
+    updates.push(`duration_unit = $${paramCount}`);
+    values.push(durationConfig.unit);
     paramCount++;
   }
   if (features !== undefined) {
@@ -192,6 +231,7 @@ export const updatePlan = asyncHandler(async (req, res, next) => {
       plan: result.rows[0],
     },
   });
+  await writeAuditLog({actorId:req.user.id,action:'plan.updated',entityType:'membership_plan',entityId:id,metadata:req.body});
 });
 
 // @desc    Delete membership plan (Soft delete)
@@ -225,4 +265,5 @@ export const deletePlan = asyncHandler(async (req, res, next) => {
     success: true,
     message: 'Plan deleted successfully',
   });
+  await writeAuditLog({actorId:req.user.id,action:'plan.deleted',entityType:'membership_plan',entityId:id});
 });

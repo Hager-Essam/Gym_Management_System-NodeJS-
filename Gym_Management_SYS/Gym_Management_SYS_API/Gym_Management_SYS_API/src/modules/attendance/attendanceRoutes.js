@@ -19,8 +19,8 @@ const router = express.Router();
 router.use(protect);
 
 // Check-in/out operations
-router.post('/check-in', validateCheckIn, checkIn);
-router.post('/check-out', validateCheckOut, checkOut);
+router.post('/check-in', authorize('admin', 'manager'), validateCheckIn, checkIn);
+router.post('/check-out', authorize('admin', 'manager'), validateCheckOut, checkOut);
 
 // Attendance queries
 router.get('/', authorize('admin', 'manager'), validatePagination, getAllAttendance);
